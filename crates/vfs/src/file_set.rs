@@ -49,6 +49,7 @@ impl FileSet {
     /// # Note
     /// Multiple [`FileId`] can be mapped to the same [`VfsPath`], and vice-versa.
     pub fn insert(&mut self, file_id: FileId, path: VfsPath) {
+        println!("insert: ${:?}", path);
         self.files.insert(path.clone(), file_id);
         self.paths.insert(file_id, path);
     }
@@ -112,6 +113,7 @@ impl FileSetConfig {
         let mut scratch_space = Vec::new();
         let mut res = vec![FileSet::default(); self.len()];
         for (file_id, path) in vfs.iter() {
+            println!("partition() loop with {:?}", path);
             let root = self.classify(path, &mut scratch_space);
             res[root].insert(file_id, path.clone());
         }

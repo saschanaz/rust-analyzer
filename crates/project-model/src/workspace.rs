@@ -799,17 +799,47 @@ impl ProjectWorkspace {
                         build_scripts,
                     )
                 } else {
-                    detached_file_to_crate_graph(
+                    let mut crate_graph = CrateGraph::default();
+                    let paths = detached_file_to_crate_graph(
                         rustc_cfg.clone(),
                         load,
                         file,
                         sysroot.as_ref().ok(),
                         cfg_overrides,
-                    )
+                        &mut crate_graph,
+                    );
+                    (crate_graph, paths)
                 },
                 sysroot,
             ),
         };
+
+        let manual_include = std::env::var("RA_CRATE_GRAPH_INCLUDE")
+            .ok()
+            .and_then(|it| {
+                let split: Vec<ManifestPath> = it
+                    .split(',')
+                    .map(|s| s.parse::<paths::Utf8PathBuf>())
+                    .flatten()
+                    .map(AbsPathBuf::try_from)
+                    .flatten()
+                    .map(|buf| ManifestPath::try_from(buf).ok())
+                    .flatten()
+                    .collect();
+                Some(split)
+            })
+            .unwrap_or(Vec::new());
+        for file in manual_include {
+            // TODO: this still only trigger to_crate_graph but not load_crate_graph log...
+            detached_file_to_crate_graph(
+                rustc_cfg.clone(),
+                load,
+                &file,
+                sysroot.as_ref().ok(),
+                cfg_overrides,
+                &mut crate_graph
+            );
+        }
 
         if matches!(sysroot.as_ref().map(|it| it.mode()), Ok(SysrootMode::Stitched(_)))
             && crate_graph.patch_cfg_if()
@@ -1007,7 +1037,11 @@ fn cargo_to_crate_graph(
     let _p = tracing::span!(tracing::Level::INFO, "cargo_to_crate_graph").entered();
     let mut res = (CrateGraph::default(), ProcMacroPaths::default());
     let crate_graph = &mut res.0;
-    let proc_macros = &mut res.1;
+    let proc_macros: &mut std::collections::HashMap<
+        la_arena::Idx<base_db::CrateData>,
+        Result<(Option<String>, AbsPathBuf), String>,
+        std::hash::BuildHasherDefault<rustc_hash::FxHasher>,
+    > = &mut res.1;
     let (public_deps, libproc_macro) = match sysroot {
         Some(sysroot) => sysroot_to_crate_graph(crate_graph, sysroot, rustc_cfg.clone(), load),
         None => (SysrootPublicDeps::default(), None),
@@ -1190,11 +1224,11 @@ fn detached_file_to_crate_graph(
     detached_file: &ManifestPath,
     sysroot: Option<&Sysroot>,
     override_cfg: &CfgOverrides,
-) -> (CrateGraph, ProcMacroPaths) {
+    crate_graph: &mut CrateGraph,
+) -> ProcMacroPaths {
     let _p = tracing::span!(tracing::Level::INFO, "detached_file_to_crate_graph").entered();
-    let mut crate_graph = CrateGraph::default();
     let (public_deps, _libproc_macro) = match sysroot {
-        Some(sysroot) => sysroot_to_crate_graph(&mut crate_graph, sysroot, rustc_cfg.clone(), load),
+        Some(sysroot) => sysroot_to_crate_graph(crate_graph, sysroot, rustc_cfg.clone(), load),
         None => (SysrootPublicDeps::default(), None),
     };
 
@@ -1208,7 +1242,7 @@ fn detached_file_to_crate_graph(
         Some(file_id) => file_id,
         None => {
             tracing::error!("Failed to load detached file {:?}", detached_file);
-            return (crate_graph, FxHashMap::default());
+            return FxHashMap::default();
         }
     };
     let display_name = detached_file
@@ -1229,8 +1263,8 @@ fn detached_file_to_crate_graph(
         },
     );
 
-    public_deps.add_to_crate_graph(&mut crate_graph, detached_file_crate);
-    (crate_graph, FxHashMap::default())
+    public_deps.add_to_crate_graph(crate_graph, detached_file_crate);
+    FxHashMap::default()
 }
 
 fn handle_rustc_crates(

@@ -79,6 +79,7 @@ pub fn load_workspace(
         &mut |path: &AbsPath| {
             let contents = loader.load_sync(path);
             let path = vfs::VfsPath::from(path.to_path_buf());
+            println!("to_crate_graph {:?}", path);
             vfs.set_file_contents(path.clone(), contents);
             vfs.file_id(&path)
         },
@@ -338,7 +339,7 @@ fn load_crate_graph(
     let ProjectWorkspace { toolchain, target_layout, .. } = ws;
 
     let lru_cap = std::env::var("RA_LRU_CAP").ok().and_then(|it| it.parse::<usize>().ok());
-    let mut db = RootDatabase::new(lru_cap);
+    let mut db: RootDatabase = RootDatabase::new(lru_cap);
     let mut analysis_change = ChangeWithProcMacros::new();
 
     db.enable_proc_attr_macros();
@@ -355,11 +356,13 @@ fn load_crate_graph(
                 let _p = tracing::span!(Level::INFO, "load_cargo::load_crate_craph/LoadedChanged")
                     .entered();
                 for (path, contents) in files {
+                    println!("load_crate_graph {:?}", path);
                     vfs.set_file_contents(path.into(), contents);
                 }
             }
         }
     }
+
     let changes = vfs.take_changes();
     for file in changes {
         if let vfs::Change::Create(v) | vfs::Change::Modify(v) = file.change {

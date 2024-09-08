@@ -692,9 +692,11 @@ fn include_expand(
     tt: &tt::Subtree,
     span: Span,
 ) -> ExpandResult<tt::Subtree> {
+    println!("include_expand {:?}", tt);
     let file_id = match include_input_to_file_id(db, arg_id, tt) {
         Ok(it) => it,
         Err(e) => {
+            println!("boo include_expand failed {:?} {:?}", tt, e);
             return ExpandResult::new(tt::Subtree::empty(DelimSpan { open: span, close: span }), e)
         }
     };
